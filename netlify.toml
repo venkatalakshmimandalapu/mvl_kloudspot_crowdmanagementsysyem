@@ -1,0 +1,9 @@
+[build]
+  publish = "dist/crowd-management-system"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+

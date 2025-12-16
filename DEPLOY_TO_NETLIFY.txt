@@ -1,0 +1,28 @@
+NETLIFY DEPLOYMENT GUIDE
+=========================
+
+Your built files are ready in this folder:
+C:\Users\VidhyasreeChinthalap\Desktop\kloudspot\dist\crowd-management-system\browser
+
+FILES TO UPLOAD TO NETLIFY:
+----------------------------
+1. index.html          (Main HTML file - REQUIRED)
+2. _redirects          (For Angular routing - REQUIRED)
+3. favicon.ico         (Site icon)
+4. main-F4A6UZQJ.js    (Main application code)
+5. polyfills-FFHMD2TL.js (Browser compatibility)
+6. styles-LKNJYKT2.css (Stylesheet)
+
+STEPS:
+------
+1. Open File Explorer
+2. Navigate to: dist\crowd-management-system\browser
+3. Select ALL files (Ctrl+A)
+4. Go to: https://app.netlify.com/drop
+5. Drag and drop all files onto Netlify
+
+IMPORTANT:
+----------
+- Upload the FILES from inside the browser folder, not the folder itself
+- Make sure index.html is included in the upload
+- The _redirects file is essential for routing to work

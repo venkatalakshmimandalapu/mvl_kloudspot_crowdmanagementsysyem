@@ -1,0 +1,310 @@
+<div class="flex h-screen bg-gray-50 overflow-hidden">
+  <!-- Sidebar -->
+  <aside class="w-64 flex flex-col" style="background-color: #0F766E;">
+    <!-- Logo -->
+    <div class="p-6 flex items-center justify-between">
+      <div class="flex items-center gap-1">
+        <div class="w-10 h-10 flex items-center justify-center rounded-lg p-2">
+          <img src="assets/kloudspotlogo.svg" alt="Kloudspot Logo" class="w-full h-full object-contain brightness-0 invert" />
+        </div>
+        <span class="text-white text-xl font-semibold">kloudspot</span>
+      </div>
+      <!-- Hamburger Menu -->
+      <button class="text-white">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+        </svg>
+      </button>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="flex-1 px-4">
+      <a routerLink="/dashboard" class="flex items-center gap-3 px-4 py-3 mb-2 text-white rounded-lg transition">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+        </svg>
+        <span class="font-medium">Overview</span>
+      </a>
+      <a routerLink="/entries" class="flex items-center gap-3 px-4 py-3 mb-2 rounded-lg text-white relative" style="background: linear-gradient(180deg, #14A085 0%, #0F766E 50%, #0D5D52 100%); border-left: 4px solid white;">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+        </svg>
+        <span class="font-medium">Crowd Entries</span>
+      </a>
+    </nav>
+
+    <!-- Logout -->
+    <div class="p-4">
+      <button
+        (click)="logout()"
+        class="w-full flex items-center gap-3 px-4 py-3 text-white rounded-lg transition"
+      >
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+        </svg>
+        <span class="font-medium">Logout</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <div class="flex-1 flex flex-col overflow-hidden">
+    <!-- Header -->
+    <header class="bg-white border-b border-gray-200 px-6 py-4">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-4">
+          <h1 class="text-xl font-semibold text-gray-900">Crowd Solutions</h1>
+          <div class="relative site-dropdown-container">
+            <button 
+              (click)="toggleSiteDropdown(); $event.stopPropagation()"
+              class="flex items-center gap-2 px-3 py-2 bg-gray-50 rounded-lg cursor-pointer hover:bg-gray-100 transition"
+            >
+              <svg class="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <span class="text-sm font-medium text-gray-700">
+                {{ selectedSite()?.name || 'Select Site' }}
+              </span>
+              <svg class="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            
+            <!-- Site Dropdown -->
+            <div 
+              *ngIf="showSiteDropdown()"
+              (click)="$event.stopPropagation()"
+              class="absolute top-full left-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-gray-200 z-50 max-h-96 overflow-y-auto"
+            >
+              <div class="py-2">
+                <div 
+                  *ngFor="let site of sites()"
+                  (click)="onSiteChange(site)"
+                  class="px-4 py-2 hover:bg-gray-50 cursor-pointer transition"
+                  [class.bg-teal-50]="selectedSite()?.siteId === site.siteId"
+                >
+                  <div class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    <span class="text-sm font-medium text-gray-700">{{ site.name }}</span>
+                    <svg 
+                      *ngIf="selectedSite()?.siteId === site.siteId"
+                      class="w-4 h-4 text-teal-600 ml-auto" 
+                      fill="none" 
+                      stroke="currentColor" 
+                      viewBox="0 0 24 24"
+                    >
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center gap-4">
+          <button class="px-3 py-1 text-sm text-gray-600 hover:text-gray-900">En</button>
+          <div class="relative">
+            <button 
+              (click)="toggleAlertsPanel()"
+              class="p-2 hover:bg-gray-100 rounded-lg relative"
+            >
+              <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+              </svg>
+              <span *ngIf="getUnreadAlertCount() > 0" class="absolute top-0 right-0 w-5 h-5 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center">
+                {{ getUnreadAlertCount() > 99 ? '99+' : getUnreadAlertCount() }}
+              </span>
+            </button>
+
+            <!-- Backdrop Overlay -->
+            <div 
+              *ngIf="showAlertsPanel()"
+              (click)="toggleAlertsPanel()"
+              class="fixed inset-0 bg-black bg-opacity-30 z-40"
+            ></div>
+
+            <!-- Alerts Dropdown Panel -->
+            <div 
+              *ngIf="showAlertsPanel()" 
+              class="fixed right-0 top-0 h-full w-96 bg-white shadow-2xl z-50 flex flex-col"
+            >
+              <!-- Header -->
+              <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                <h3 class="text-2xl font-bold text-gray-900">Alerts</h3>
+                <button 
+                  (click)="toggleAlertsPanel()"
+                  class="text-gray-400 hover:text-gray-600 transition"
+                  aria-label="Close alerts"
+                >
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <!-- Alerts List -->
+              <div class="overflow-y-auto flex-1 px-4 py-4">
+                <div *ngIf="alerts().length === 0" class="px-4 py-8 text-center text-gray-500">
+                  <svg class="w-12 h-12 mx-auto mb-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <p>No alerts</p>
+                </div>
+                <div *ngFor="let alert of alerts()" class="mb-3 bg-white rounded-lg shadow-sm border-l-4 border-teal-500 hover:shadow-md transition">
+                  <div class="p-4 flex items-start justify-between">
+                    <div class="flex-1 min-w-0">
+                      <!-- Timestamp -->
+                      <div class="text-xs text-gray-500 mb-2">
+                        {{ formatAlertTime(alert.timestamp) }}
+                      </div>
+                      <!-- Alert Title -->
+                      <h4 class="text-sm font-semibold text-gray-900 mb-2">
+                        {{ alert.actionType === 'entry' ? 'Entry' : 'Exit' }} Alert
+                      </h4>
+                      <!-- Location -->
+                      <div class="flex items-center gap-1 text-xs text-gray-600">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        <span>{{ alert.zone || 'Unknown Zone' }}</span>
+                      </div>
+                    </div>
+                    <!-- Info Button -->
+                    <button 
+                      (click)="showAlertInfo(alert)"
+                      class="ml-4 px-3 py-1.5 bg-teal-500 hover:bg-teal-600 text-white text-xs font-medium rounded-lg transition flex-shrink-0"
+                      aria-label="View alert info"
+                    >
+                      Info
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="relative group">
+            <div class="w-8 h-8 bg-gradient-to-br from-teal-500 to-teal-600 rounded-full flex items-center justify-center text-white text-sm font-semibold cursor-pointer">
+              {{ getUserInitials() }}
+            </div>
+            <!-- Tooltip -->
+            <div class="absolute right-0 top-full mt-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg whitespace-nowrap opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+              {{ userEmail() }}
+              <div class="absolute right-4 -top-1 w-2 h-2 bg-gray-900 transform rotate-45"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 overflow-y-auto bg-gray-50 p-6">
+      <!-- Loading State -->
+      <div *ngIf="isLoading()" class="flex justify-center items-center h-full">
+        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-600"></div>
+      </div>
+
+      <!-- Page Title -->
+      <h2 *ngIf="!isLoading()" class="text-2xl font-bold text-gray-900 mb-6">Overview</h2>
+
+      <!-- Crowd Entries Table -->
+      <div *ngIf="!isLoading()" class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50">
+              <tr>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Name
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Sex
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Entry
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Exit
+                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Dwell Time
+                </th>
+              </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+              <tr *ngFor="let record of records()" class="hover:bg-gray-50">
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center text-white font-semibold text-sm">
+                      {{ getInitials(record.personName) }}
+                    </div>
+                    <span class="text-sm font-medium text-gray-900">{{ record.personName }}</span>
+                  </div>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <span class="text-sm text-gray-900">{{ record.gender === 'male' ? 'Male' : 'Female' }}</span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <span class="text-sm text-gray-900">{{ formatTime(record.entryUtc, record.entryLocal) }}</span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <span class="text-sm text-gray-900">{{ formatTime(record.exitUtc, record.exitLocal) }}</span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <span class="text-sm text-gray-900">{{ formatDwellTime(record.dwellMinutes, record.exitUtc) }}</span>
+                </td>
+              </tr>
+              <tr *ngIf="records().length === 0">
+                <td colspan="5" class="px-6 py-4 text-center text-sm text-gray-500">
+                  No entries found
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Pagination -->
+        <div *ngIf="totalPages() > 0" class="bg-white px-6 py-4 border-t border-gray-200">
+          <div class="flex items-center justify-center gap-2">
+            <button
+              (click)="previousPage()"
+              [disabled]="currentPage() === 1"
+              class="px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              &lt;
+            </button>
+            <ng-container *ngFor="let pageNum of getPageNumbers()">
+              <button
+                *ngIf="!isString(pageNum)"
+                (click)="goToPageIfNumber(pageNum)"
+                [class.text-teal-600]="currentPage() === pageNum"
+                [class.border-b-2]="currentPage() === pageNum"
+                [class.border-teal-600]="currentPage() === pageNum"
+                [class.font-semibold]="currentPage() === pageNum"
+                class="px-4 py-2 text-sm text-gray-700 hover:text-gray-900"
+              >
+                {{ pageNum }}
+              </button>
+              <span *ngIf="isString(pageNum)" class="px-2 text-sm text-gray-500">
+                {{ pageNum }}
+              </span>
+            </ng-container>
+            <button
+              (click)="nextPage()"
+              [disabled]="currentPage() === totalPages()"
+              class="px-3 py-2 text-sm font-medium text-gray-700 hover:text-gray-900 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              &gt;
+            </button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+
+
