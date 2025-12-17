@@ -7,7 +7,7 @@ import { AnalyticsService } from '../services/analytics.service';
 import { SocketService, LiveOccupancyEvent, AlertEvent } from '../services/socket.service';
 import { AuthService } from '../services/auth.service';
 import { Site } from '../models/auth.model';
-import { Subscription, forkJoin, of } from 'rxjs';
+import { Subscription, forkJoin, of, interval } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 
 @Component({
@@ -23,6 +23,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   private authService = inject(AuthService);
   private cdr = inject(ChangeDetectorRef);
   private subscriptions = new Subscription();
+  private refreshSubscription?: Subscription;
   private documentClickHandler = this.handleDocumentClick.bind(this);
 
   @ViewChild('occupancyChart') occupancyChart?: BaseChartDirective;
@@ -34,7 +35,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   todayFootfall = signal(0);
   averageDwellTime = signal(0);
   dwellTimeUnit = signal('minutes');
-  
+
   // Comparisons
   occupancyComparison = signal<{ change: number; changePercent: number } | null>(null);
   footfallComparison = signal<{ change: number; changePercent: number } | null>(null);
@@ -46,7 +47,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   // Alerts
   alerts = signal<Array<AlertEvent & { id: string; dismissed?: boolean }>>([]);
   showAlertsPanel = signal(false);
-  
+
+  // Sidebar
+  isSidebarCollapsed = signal(false);
+
   // User
   userEmail = signal<string>('');
 
@@ -54,10 +58,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   sites = signal<Array<{ siteId: string; name: string }>>([]);
   selectedSite = signal<{ siteId: string; name: string } | null>(null);
   showSiteDropdown = signal(false);
-  
+
   // Zone mapping: zoneId -> zoneName
   private zoneMap = new Map<string, string>();
-  
+
   // Date filter
   dateFilter = signal<'today' | 'yesterday' | 'week' | 'month'>('today');
 
@@ -86,10 +90,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         borderColor: 'rgb(20, 184, 166)', // Teal-500 (darker)
         backgroundColor: 'rgba(20, 184, 166, 0.6)', // Darker teal fill
         tension: 0.4,
-        fill: true,
+        fill: false,
         pointRadius: 0,
         pointHoverRadius: 4,
-        borderWidth: 0
+        borderWidth: 2
       },
       {
         label: 'Female',
@@ -97,10 +101,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         borderColor: 'rgb(153, 246, 228)', // Teal-200 (lighter)
         backgroundColor: 'rgba(153, 246, 228, 0.6)', // Lighter teal fill
         tension: 0.4,
-        fill: true,
+        fill: false,
         pointRadius: 0,
         pointHoverRadius: 4,
-        borderWidth: 0
+        borderWidth: 2
       }
     ]
   });
@@ -119,7 +123,17 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     maintainAspectRatio: false,
     plugins: {
       legend: {
-        display: false
+        display: true,
+        align: 'end',
+        labels: {
+          usePointStyle: true,
+          pointStyle: 'circle',
+          boxWidth: 8,
+          color: '#6B7280',
+          font: {
+            size: 12
+          }
+        }
       },
       tooltip: {
         mode: 'index',
@@ -135,9 +149,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     scales: {
       y: {
         beginAtZero: true,
-        max: 120,
+        max: 250,
         ticks: {
-          stepSize: 30,
+          stepSize: 50,
           precision: 0,
           color: '#6B7280',
           font: {
@@ -162,12 +176,79 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     }
   };
 
+  occupancyChartPlugins = [{
+    id: 'liveLine',
+    afterDatasetsDraw: (chart: any) => {
+      const ctx = chart.ctx;
+      const meta = chart.getDatasetMeta(0);
+      const dataPoints = meta.data;
+
+      if (dataPoints.length > 0) {
+        const lastPoint = dataPoints[dataPoints.length - 1];
+        const x = lastPoint.x;
+        const top = chart.chartArea.top;
+        const bottom = chart.chartArea.bottom;
+
+        // Draw dashed red line
+        ctx.save();
+        ctx.beginPath();
+        ctx.setLineDash([4, 4]);
+        ctx.moveTo(x, top);
+        ctx.lineTo(x, bottom);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#B91C1C'; // Red-700
+        ctx.stroke();
+        ctx.restore();
+
+        // Draw LIVE badge
+        ctx.save();
+        const badgeWidth = 20;
+        const badgeHeight = 44;
+        const radius = 4;
+
+        // Position badge at the top of the chart area
+        const badgeX = x - (badgeWidth / 2);
+        const badgeY = top;
+
+        // Draw badge background
+        ctx.fillStyle = '#B91C1C';
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(badgeX, badgeY, badgeWidth, badgeHeight, radius);
+        } else {
+          ctx.rect(badgeX, badgeY, badgeWidth, badgeHeight);
+        }
+        ctx.fill();
+
+        // Draw text
+        ctx.translate(x, badgeY + badgeHeight / 2);
+        ctx.rotate(-Math.PI / 2);
+        ctx.font = 'bold 10px sans-serif';
+        ctx.fillStyle = 'white';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('LIVE', 0, 0);
+        ctx.restore();
+      }
+    }
+  }];
+
   demographicsChartOptions: ChartOptions<'line'> = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
       legend: {
-        display: false
+        display: true,
+        align: 'end',
+        labels: {
+          usePointStyle: true,
+          pointStyle: 'circle',
+          boxWidth: 8,
+          color: '#6B7280',
+          font: {
+            size: 12
+          }
+        }
       },
       tooltip: {
         mode: 'index',
@@ -182,9 +263,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     },
     scales: {
       y: {
-        beginAtZero: false,
-        min: 60,
-        max: 120,
+        beginAtZero: true,
         ticks: {
           stepSize: 30,
           precision: 0,
@@ -237,20 +316,20 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   ngOnInit(): void {
     // Add click listener to close dropdown when clicking outside
     document.addEventListener('click', this.documentClickHandler);
-    
+
     // Get user email
     const email = this.authService.getUserEmail();
     if (email) {
       this.userEmail.set(email);
     }
-    
+
     // Load all sites first
     this.authService.getAllSites().subscribe({
       next: (sites) => {
         if (sites && sites.length > 0) {
           // Store all sites
           this.sites.set(sites.map(s => ({ siteId: s.siteId, name: s.name })));
-          
+
           // Build zone mapping from all sites
           this.zoneMap.clear();
           let totalZonesFound = 0;
@@ -278,20 +357,29 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             console.error('❌ WARNING: Zone map is empty! This will cause "Unknown Zone" to appear in alerts.');
             console.error('Check if sites API response includes zones array with zoneId and name properties.');
           }
-          
+
           // Get stored site ID or use first site
           const storedSiteId = this.authService.getStoredSiteId();
-          const siteToUse = storedSiteId 
+          const siteToUse = storedSiteId
             ? sites.find(s => s.siteId === storedSiteId) || sites[0]
             : sites[0];
-          
+
           // Set selected site
           this.selectedSite.set({ siteId: siteToUse.siteId, name: siteToUse.name });
           this.authService.setSiteId(siteToUse.siteId);
-          
+
           // Load dashboard data
           this.loadDashboardData(siteToUse.siteId);
           this.setupSocketListeners();
+
+          // Auto-refresh every 90 seconds
+          this.refreshSubscription = interval(90000).subscribe(() => {
+            const currentSite = this.selectedSite();
+            if (currentSite) {
+              console.log('Auto-refreshing dashboard data...');
+              this.loadDashboardData(currentSite.siteId, true);
+            }
+          });
         } else {
           console.error('No sites available');
           this.isLoading.set(false);
@@ -331,6 +419,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     this.showSiteDropdown.update(value => !value);
   }
 
+  toggleSidebar(): void {
+    this.isSidebarCollapsed.update(value => !value);
+  }
+
   ngAfterViewInit(): void {
     // Charts will be updated when data loads
   }
@@ -338,17 +430,22 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   ngOnDestroy(): void {
     document.removeEventListener('click', this.documentClickHandler);
     this.subscriptions.unsubscribe();
+    if (this.refreshSubscription) {
+      this.refreshSubscription.unsubscribe();
+    }
     this.socketService.disconnect();
   }
 
-  private loadDashboardData(siteId?: string): void {
+  private loadDashboardData(siteId?: string, isBackground: boolean = false): void {
     if (!siteId) {
       console.error('Site ID is required');
       this.isLoading.set(false);
       return;
     }
 
-    this.isLoading.set(true);
+    if (!isBackground) {
+      this.isLoading.set(true);
+    }
 
     // Calculate time ranges based on date filter
     // API expects UTC epoch-millis
@@ -356,9 +453,9 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     const nowUtc = new Date();
     let fromUtc: number;
     let toUtc: number;
-    
+
     const filter = this.dateFilter();
-    
+
     if (filter === 'today') {
       // Today: from start of today to now
       const todayStart = new Date(Date.UTC(nowUtc.getUTCFullYear(), nowUtc.getUTCMonth(), nowUtc.getUTCDate(), 0, 0, 0, 0));
@@ -438,7 +535,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         if (results.occupancy) {
           console.log('Occupancy API Response:', results.occupancy);
           const response = results.occupancy as any;
-          
+
           // Handle buckets format (actual API response)
           if (response.buckets && Array.isArray(response.buckets) && response.buckets.length > 0) {
             const buckets = response.buckets;
@@ -446,14 +543,14 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             const latestBucket = buckets[buckets.length - 1];
             const occupancy = latestBucket?.avg ?? 0;
             this.liveOccupancy.set(occupancy);
-            
+
             // Update chart with buckets data
             const labels = buckets.map((bucket: any) => {
               const timestamp = bucket.utc || bucket.local;
               return new Date(timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
             });
             const values = buckets.map((bucket: any) => bucket.avg ?? 0);
-            
+
             this.occupancyChartData.set({
               labels,
               datasets: [{
@@ -469,13 +566,13 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
               }]
             });
             this.cdr.detectChanges();
-          } 
+          }
           // Fallback to timeseries format (if API changes)
           else if (results.occupancy.timeseries && Array.isArray(results.occupancy.timeseries) && results.occupancy.timeseries.length > 0) {
             const timeseries = results.occupancy.timeseries;
             const occupancy = response.currentOccupancy ?? response.occupancy ?? (timeseries.length > 0 ? timeseries[timeseries.length - 1]?.occupancy : 0);
             this.liveOccupancy.set(occupancy);
-            
+
             const labels = timeseries.map(point => {
               const pointAny = point as any;
               const timestamp = point.timestamp || pointAny.time || pointAny.date;
@@ -485,7 +582,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
               const pointAny = point as any;
               return point.occupancy || pointAny.count || 0;
             });
-            
+
             this.occupancyChartData.set({
               labels,
               datasets: [{
@@ -509,7 +606,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             console.warn('No buckets or timeseries data found in occupancy response');
             this.liveOccupancy.set(0);
           }
-          
+
           if (results.occupancy.comparison) {
             this.occupancyComparison.set({
               change: results.occupancy.comparison.change,
@@ -554,7 +651,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         if (results.demographics) {
           console.log('Demographics API Response:', results.demographics);
           const response = results.demographics as any;
-          
+
           // Handle buckets format (actual API response)
           if (response.buckets && Array.isArray(response.buckets) && response.buckets.length > 0) {
             const buckets = response.buckets;
@@ -566,7 +663,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
               male: maleValue,
               female: femaleValue
             });
-            
+
             // Update doughnut chart
             const total = maleValue + femaleValue;
             this.demographicsDoughnutChartData.set({
@@ -577,7 +674,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
                 borderWidth: 0
               }]
             });
-            
+
             // Update chart with buckets data
             const labels = buckets.map((bucket: any) => {
               const timestamp = bucket.utc || bucket.local;
@@ -585,7 +682,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             });
             const maleValues = buckets.map((bucket: any) => bucket.male ?? 0);
             const femaleValues = buckets.map((bucket: any) => bucket.female ?? 0);
-            
+
             this.demographicsChartData.set({
               labels,
               datasets: [
@@ -595,10 +692,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
                   borderColor: 'rgb(20, 184, 166)', // Teal-500 (darker)
                   backgroundColor: 'rgba(20, 184, 166, 0.6)', // Darker teal fill
                   tension: 0.4,
-                  fill: true,
+                  fill: false,
                   pointRadius: 0,
                   pointHoverRadius: 4,
-                  borderWidth: 0
+                  borderWidth: 2
                 },
                 {
                   label: 'Female',
@@ -606,10 +703,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
                   borderColor: 'rgb(153, 246, 228)', // Teal-200 (lighter)
                   backgroundColor: 'rgba(153, 246, 228, 0.6)', // Lighter teal fill
                   tension: 0.4,
-                  fill: true,
+                  fill: false,
                   pointRadius: 0,
                   pointHoverRadius: 4,
-                  borderWidth: 0
+                  borderWidth: 2
                 }
               ]
             });
@@ -629,7 +726,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
               male: maleValue,
               female: femaleValue
             });
-            
+
             // Update doughnut chart
             const total = maleValue + femaleValue;
             this.demographicsDoughnutChartData.set({
@@ -640,7 +737,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
                 borderWidth: 0
               }]
             });
-            
+
             const labels = timeseries.map(point => {
               const pointAny = point as any;
               const timestamp = point.timestamp || pointAny.time || pointAny.date;
@@ -648,7 +745,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             });
             const maleValues = timeseries.map(point => point.male ?? 0);
             const femaleValues = timeseries.map(point => point.female ?? 0);
-            
+
             this.demographicsChartData.set({
               labels,
               datasets: [
@@ -691,7 +788,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         }
 
         this.isLoading.set(false);
-        
+
         // Ensure charts are updated after all data is loaded
         setTimeout(() => {
           this.occupancyChart?.chart?.update('none');
@@ -721,12 +818,12 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       console.log('Alert keys:', Object.keys(event));
       console.log('Zone map size:', this.zoneMap.size);
       console.log('Zone map contents:', Array.from(this.zoneMap.entries()));
-      
+
       // Handle different alert formats - check for zone in various possible fields
       // Check flat fields first
-      let zoneValue = event.zone || event.zoneId || event.zoneName || event.location || event.zone_id || 
-                      event.fromZone || event.toZone;
-      
+      let zoneValue = event.zone || event.zoneId || event.zoneName || event.location || event.zone_id ||
+        event.fromZone || event.toZone;
+
       // Check nested objects if zone not found
       if (!zoneValue && event.data) {
         zoneValue = event.data.zone || event.data.zoneId || event.data.zoneName;
@@ -737,7 +834,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       if (!zoneValue && event.metadata) {
         zoneValue = event.metadata.zone || event.metadata.zoneId || event.metadata.zoneName;
       }
-      
+
       console.log('Zone value found:', zoneValue, 'from fields:', {
         zone: event.zone,
         zoneId: event.zoneId,
@@ -750,10 +847,10 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
         'payload.zone': event.payload?.zone,
         'metadata.zone': event.metadata?.zone
       });
-      
+
       // Log all keys to help debug
       console.log('All alert keys:', Object.keys(event));
-      
+
       // Normalize actionType from different formats
       let actionType: 'entry' | 'exit' = 'exit';
       if (event.actionType) {
@@ -767,7 +864,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           actionType = 'entry';
         }
       }
-      
+
       // Ensure timestamp is valid, use current time if missing or invalid
       let timestamp = event.timestamp || event.ts;
       if (timestamp && typeof timestamp === 'number') {
@@ -776,21 +873,21 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
       } else if (!timestamp || isNaN(new Date(timestamp).getTime())) {
         timestamp = new Date().toISOString();
       }
-      
+
       // Map zone ID to zone name if zone is provided
       let zoneName = zoneValue;
-      
+
       // Check if zone exists and is not empty
       if (zoneName && typeof zoneName === 'string' && zoneName.trim() !== '') {
         const trimmedZone = zoneName.trim();
-        
+
         // Try to find in zone map (might be zoneId)
         if (this.zoneMap.has(trimmedZone)) {
           zoneName = this.zoneMap.get(trimmedZone)!;
           console.log('✓ Mapped zone ID to name:', trimmedZone, '->', zoneName);
         } else {
           // Check if it's already a zone name by searching values (case-insensitive)
-          const foundEntry = Array.from(this.zoneMap.entries()).find(([id, name]) => 
+          const foundEntry = Array.from(this.zoneMap.entries()).find(([id, name]) =>
             name.toLowerCase() === trimmedZone.toLowerCase()
           );
           if (foundEntry) {
@@ -798,11 +895,11 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             zoneName = foundEntry[1]; // Use the canonical name from map
           } else {
             // Try partial matching or check if zone might be in a different format
-            const partialMatch = Array.from(this.zoneMap.entries()).find(([id, name]) => 
-              id.toLowerCase().includes(trimmedZone.toLowerCase()) || 
+            const partialMatch = Array.from(this.zoneMap.entries()).find(([id, name]) =>
+              id.toLowerCase().includes(trimmedZone.toLowerCase()) ||
               name.toLowerCase().includes(trimmedZone.toLowerCase())
             );
-            
+
             if (partialMatch) {
               console.log('✓ Found partial match:', trimmedZone, '->', partialMatch[1]);
               zoneName = partialMatch[1];
@@ -832,7 +929,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           toZone: event.toZone
         });
         console.warn('Zone map has', this.zoneMap.size, 'zones available');
-        
+
         // Check if zone info might be in direction field (e.g., "zone-exit" might contain zone name)
         if (event.direction && typeof event.direction === 'string') {
           const directionParts = event.direction.split('-');
@@ -847,7 +944,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
             }
           }
         }
-        
+
         // If we still don't have a zone, try site name as fallback
         if (!zoneName || zoneName === '') {
           if (event.site || event.siteId) {
@@ -863,7 +960,7 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
           }
         }
       }
-      
+
       const alertWithId: AlertEvent & { id: string; dismissed?: boolean } = {
         actionType: actionType,
         zone: zoneName,
@@ -894,17 +991,17 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
   getUnreadAlertCount(): number {
     return this.alerts().filter(alert => !alert.dismissed).length;
   }
-  
+
   getUserInitials(): string {
     const email = this.userEmail();
     if (!email) return '?';
-    
+
     // Extract name from email (before @)
     const namePart = email.split('@')[0];
-    
+
     // Split by dots, underscores, or capitalize letters
     const parts = namePart.split(/[._-]/);
-    
+
     if (parts.length >= 2) {
       // Take first letter of first two parts
       return (parts[0][0] + parts[1][0]).toUpperCase();
@@ -914,109 +1011,57 @@ export class DashboardComponent implements OnInit, OnDestroy, AfterViewInit {
     }
   }
 
-  getSeverityColor(severity: 'low' | 'medium' | 'high'): string {
-    switch (severity) {
+  getSeverityBadgeClass(severity: 'low' | 'medium' | 'high'): string {
+    switch (severity?.toLowerCase()) {
       case 'high':
-        return 'bg-red-100 text-red-800 border-red-300';
+        return 'bg-red-100 text-red-600';
       case 'medium':
-        return 'bg-yellow-100 text-yellow-800 border-yellow-300';
+        return 'bg-yellow-100 text-yellow-600';
       case 'low':
-        return 'bg-blue-100 text-blue-800 border-blue-300';
+        return 'bg-blue-100 text-blue-600';
       default:
-        return 'bg-gray-100 text-gray-800 border-gray-300';
+        return 'bg-blue-100 text-blue-600';
     }
   }
 
-  getSeverityIcon(severity: 'low' | 'medium' | 'high'): string {
-    switch (severity) {
+  getSeverityDotClass(severity: 'low' | 'medium' | 'high'): string {
+    switch (severity?.toLowerCase()) {
       case 'high':
-        return 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z';
+        return 'bg-red-500';
       case 'medium':
-        return 'M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z';
+        return 'bg-yellow-400';
       case 'low':
-        return 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z';
+        return 'bg-blue-400';
       default:
-        return 'M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z';
+        return 'bg-blue-400';
     }
   }
 
   formatAlertTime(timestamp: string): string {
-    try {
-      if (!timestamp) {
-        // Use current time as fallback instead of "Unknown time"
-        const now = new Date();
-        const hours = now.getHours();
-        const minutes = now.getMinutes();
-        const ampm = hours >= 12 ? 'PM' : 'AM';
-        const displayHours = hours % 12 || 12;
-        const displayMinutes = minutes.toString().padStart(2, '0');
-        return `Today, ${displayHours}:${displayMinutes} ${ampm}`;
-      }
+    if (!timestamp) return '';
+    const date = new Date(timestamp);
+    if (isNaN(date.getTime())) return timestamp;
 
-      // Try to parse the timestamp - handle different formats
-      let date: Date;
-      
-      // Check if it's a Unix timestamp (number as string)
-      if (/^\d+$/.test(timestamp)) {
-        date = new Date(parseInt(timestamp));
-      } else {
-        date = new Date(timestamp);
-      }
-
-      // Check if date is valid
-      if (isNaN(date.getTime())) {
-        console.warn('Invalid timestamp:', timestamp);
-        // Try to use current time as fallback
-        date = new Date();
-      }
-
-      const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const alertDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-      
-      // Format time as "10:00 AM"
-      const hours = date.getHours();
-      const minutes = date.getMinutes();
-      const ampm = hours >= 12 ? 'PM' : 'AM';
-      const displayHours = hours % 12 || 12;
-      const displayMinutes = minutes.toString().padStart(2, '0');
-      const timeString = `${displayHours}:${displayMinutes} ${ampm}`;
-      
-      // Check if it's today
-      if (alertDate.getTime() === today.getTime()) {
-        return `Today, ${timeString}`;
-      }
-      
-      // Check if it's yesterday
-      const yesterday = new Date(today);
-      yesterday.setDate(yesterday.getDate() - 1);
-      if (alertDate.getTime() === yesterday.getTime()) {
-        return `Yesterday, ${timeString}`;
-      }
-      
-      // Otherwise show date
-      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' + timeString;
-    } catch (error) {
-      console.error('Error formatting alert time:', error, timestamp);
-      // Return current time as fallback
-      const now = new Date();
-      const hours = now.getHours();
-      const minutes = now.getMinutes();
-      const ampm = hours >= 12 ? 'PM' : 'AM';
-      const displayHours = hours % 12 || 12;
-      const displayMinutes = minutes.toString().padStart(2, '0');
-      return `Today, ${displayHours}:${displayMinutes} ${ampm}`;
-    }
+    // Format: 12/17/2025 10:57:19 AM
+    return date.toLocaleString('en-US', {
+      month: '2-digit',
+      day: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: true
+    });
   }
 
   showAlertInfo(alert: AlertEvent & { id: string; dismissed?: boolean }): void {
     // Mark alert as dismissed (seen/read)
     const alertList = this.alerts();
-    const updatedAlerts = alertList.map(a => 
+    const updatedAlerts = alertList.map(a =>
       a.id === alert.id ? { ...a, dismissed: true } : a
     );
     this.alerts.set(updatedAlerts);
-    
+
     // Log alert info (can add modal later if needed)
     console.log('Alert info:', alert);
   }

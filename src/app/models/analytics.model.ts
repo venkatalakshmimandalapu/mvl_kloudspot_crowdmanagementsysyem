@@ -73,4 +73,6 @@ export interface PaginationRequest {
   pageSize: number;
   siteId?: string;
   zoneId?: string;
+  fromUtc?: number;
+  toUtc?: number;
 }

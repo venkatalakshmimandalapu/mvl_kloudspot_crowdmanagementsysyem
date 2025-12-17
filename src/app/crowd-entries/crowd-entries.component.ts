@@ -6,7 +6,7 @@ import { AuthService } from '../services/auth.service';
 import { SocketService, AlertEvent } from '../services/socket.service';
 import { EntryExitRecord } from '../models/analytics.model';
 import { Site } from '../models/auth.model';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, addDays, startOfDay, endOfDay, isSameDay } from 'date-fns';
 import { Subscription } from 'rxjs';
 
 @Component({
@@ -29,10 +29,13 @@ export class CrowdEntriesComponent implements OnInit, OnDestroy {
   totalPages = signal(0);
   isLoading = signal(false);
 
+  // Date Filter
+  selectedDate = signal(new Date());
+
   // Alerts
   alerts = signal<Array<AlertEvent & { id: string; dismissed?: boolean }>>([]);
   showAlertsPanel = signal(false);
-  
+
   // User
   userEmail = signal<string>('');
 
@@ -40,28 +43,33 @@ export class CrowdEntriesComponent implements OnInit, OnDestroy {
   sites = signal<Array<{ siteId: string; name: string }>>([]);
   selectedSite = signal<{ siteId: string; name: string } | null>(null);
   showSiteDropdown = signal(false);
+
+
+  // Sidebar
+  isSidebarCollapsed = signal(false);
+
   private documentClickHandler = this.handleDocumentClick.bind(this);
-  
+
   // Zone mapping: zoneId -> zoneName
   private zoneMap = new Map<string, string>();
 
   ngOnInit(): void {
     // Add click listener to close dropdown when clicking outside
     document.addEventListener('click', this.documentClickHandler);
-    
+
     // Get user email
     const email = this.authService.getUserEmail();
     if (email) {
       this.userEmail.set(email);
     }
-    
+
     // Load all sites first
     this.authService.getAllSites().subscribe({
       next: (sites) => {
         if (sites && sites.length > 0) {
           // Store all sites
           this.sites.set(sites.map(s => ({ siteId: s.siteId, name: s.name })));
-          
+
           // Build zone mapping from all sites
           this.zoneMap.clear();
           sites.forEach(site => {
@@ -72,17 +80,17 @@ export class CrowdEntriesComponent implements OnInit, OnDestroy {
             }
           });
           console.log('Zone map initialized:', this.zoneMap);
-          
+
           // Get stored site ID or use first site
           const storedSiteId = this.authService.getStoredSiteId();
-          const siteToUse = storedSiteId 
+          const siteToUse = storedSiteId
             ? sites.find(s => s.siteId === storedSiteId) || sites[0]
             : sites[0];
-          
+
           // Set selected site
           this.selectedSite.set({ siteId: siteToUse.siteId, name: siteToUse.name });
           this.authService.setSiteId(siteToUse.siteId);
-          
+
           // Load entries with the selected site
           this.loadEntries();
           this.setupSocketListeners();
@@ -113,6 +121,10 @@ export class CrowdEntriesComponent implements OnInit, OnDestroy {
     this.showSiteDropdown.update(value => !value);
   }
 
+  toggleSidebar(): void {
+    this.isSidebarCollapsed.update(value => !value);
+  }
+
   private handleDocumentClick(event: MouseEvent): void {
     const target = event.target as HTMLElement;
     if (!target.closest('.site-dropdown-container')) {
@@ -124,31 +136,124 @@ export class CrowdEntriesComponent implements OnInit, OnDestroy {
     this.socketService.connect();
 
     // Listen for alerts
-    const alertSub = this.socketService.onAlert().subscribe((event: AlertEvent) => {
+    const alertSub = this.socketService.onAlert().subscribe((evt: AlertEvent) => {
+      const event = evt as any;
       console.log('Alert received:', event);
+
+      // Handle different alert formats - check for zone in various possible fields
+      // Check flat fields first
+      let zoneValue = event.zone || event.zoneId || event.zoneName || event.location || event.zone_id ||
+        event.fromZone || event.toZone;
+
+      // Check nested objects if zone not found
+      if (!zoneValue && event.data) {
+        zoneValue = event.data.zone || event.data.zoneId || event.data.zoneName;
+      }
+      if (!zoneValue && event.payload) {
+        zoneValue = event.payload.zone || event.payload.zoneId || event.payload.zoneName;
+      }
+      if (!zoneValue && event.metadata) {
+        zoneValue = event.metadata.zone || event.metadata.zoneId || event.metadata.zoneName;
+      }
+
+      console.log('Zone value found:', zoneValue);
+
+      // Normalize actionType from different formats
+      let actionType: 'entry' | 'exit' = 'exit';
+      if (event.actionType) {
+        actionType = event.actionType;
+      } else if (event.direction) {
+        // Handle 'zone-exit', 'zone-entry', 'exit', 'entry' formats
+        const direction = event.direction.toLowerCase();
+        if (direction.includes('exit')) {
+          actionType = 'exit';
+        } else if (direction.includes('entry') || direction.includes('enter')) {
+          actionType = 'entry';
+        }
+      }
+
       // Ensure timestamp is valid, use current time if missing or invalid
-      let timestamp = event.timestamp;
-      if (!timestamp || isNaN(new Date(timestamp).getTime())) {
+      let timestamp = event.timestamp || event.ts;
+      if (timestamp && typeof timestamp === 'number') {
+        // Convert epoch milliseconds to ISO string
+        timestamp = new Date(timestamp).toISOString();
+      } else if (!timestamp || isNaN(new Date(timestamp).getTime())) {
         timestamp = new Date().toISOString();
       }
-      
+
       // Map zone ID to zone name if zone is provided
-      let zoneName = event.zone;
-      if (zoneName && this.zoneMap.has(zoneName)) {
-        // If zone is a zoneId, map it to zone name
-        zoneName = this.zoneMap.get(zoneName)!;
-      } else if (!zoneName || zoneName.trim() === '') {
-        // If zone is empty or missing, set to null so template shows "Unknown Zone"
-        zoneName = '';
+      let zoneName = zoneValue;
+
+      // Check if zone exists and is not empty
+      if (zoneName && typeof zoneName === 'string' && zoneName.trim() !== '') {
+        const trimmedZone = zoneName.trim();
+
+        // Try to find in zone map (might be zoneId)
+        if (this.zoneMap.has(trimmedZone)) {
+          zoneName = this.zoneMap.get(trimmedZone)!;
+          console.log('✓ Mapped zone ID to name:', trimmedZone, '->', zoneName);
+        } else {
+          // Check if it's already a zone name by searching values (case-insensitive)
+          const foundEntry = Array.from(this.zoneMap.entries()).find(([id, name]) =>
+            name.toLowerCase() === trimmedZone.toLowerCase()
+          );
+          if (foundEntry) {
+            console.log('✓ Zone is already a name:', trimmedZone);
+            zoneName = foundEntry[1]; // Use the canonical name from map
+          } else {
+            // Try partial matching or check if zone might be in a different format
+            const partialMatch = Array.from(this.zoneMap.entries()).find(([id, name]) =>
+              id.toLowerCase().includes(trimmedZone.toLowerCase()) ||
+              name.toLowerCase().includes(trimmedZone.toLowerCase())
+            );
+
+            if (partialMatch) {
+              console.log('✓ Found partial match:', trimmedZone, '->', partialMatch[1]);
+              zoneName = partialMatch[1];
+            } else {
+              console.warn('⚠ Zone not found in map. Event zone:', trimmedZone);
+              // Keep the original value - might be a valid zone name not in our map
+              zoneName = trimmedZone;
+            }
+          }
+        }
+      } else {
+        // Zone is null, undefined, or empty
+        console.warn('⚠ Alert has no zone information.');
+
+        // Check if zone info might be in direction field
+        if (event.direction && typeof event.direction === 'string') {
+          const directionParts = event.direction.split('-');
+          if (directionParts.length > 1) {
+            const possibleZone = directionParts[0]; // "zone" from "zone-exit"
+            if (possibleZone && possibleZone !== 'zone') {
+              if (this.zoneMap.has(possibleZone)) {
+                zoneName = this.zoneMap.get(possibleZone)!;
+              }
+            }
+          }
+        }
+
+        // If we still don't have a zone, try site name as fallback
+        if (!zoneName || zoneName === '') {
+          if (event.site || event.siteId) {
+            const siteInfo = this.sites().find(s => s.siteId === event.site || s.siteId === event.siteId || s.name === event.site);
+            if (siteInfo) {
+              zoneName = `${siteInfo.name}`;
+            }
+          }
+        }
       }
-      // If zoneName exists but not in map, it might already be a name, so keep it
-      
-      const alertWithId = {
-        ...event,
-        zone: zoneName,
+
+      const alertWithId: AlertEvent & { id: string; dismissed?: boolean } = {
+        actionType: actionType,
+        zone: zoneName || '', // Ensure string
+        site: event.site || event.siteId || '',
+        severity: event.severity || 'low',
         timestamp: timestamp,
-        id: `${Date.now()}-${Math.random()}`
+        id: event.eventId || `${Date.now()}-${Math.random()}`
       };
+
       this.alerts.update(alerts => [alertWithId, ...alerts]);
     });
     this.subscriptions.add(alertSub);
@@ -169,17 +274,17 @@ export class CrowdEntriesComponent implements OnInit, OnDestroy {
   getUnreadAlertCount(): number {
     return this.alerts().filter(alert => !alert.dismissed).length;
   }
-  
+
   getUserInitials(): string {
     const email = this.userEmail();
     if (!email) return '?';
-    
+
     // Extract name from email (before @)
     const namePart = email.split('@')[0];
-    
+
     // Split by dots, underscores, or capitalize letters
     const parts = namePart.split(/[._-]/);
-    
+
     if (parts.length >= 2) {
       // Take first letter of first two parts
       return (parts[0][0] + parts[1][0]).toUpperCase();
@@ -230,7 +335,7 @@ export class CrowdEntriesComponent implements OnInit, OnDestroy {
 
       // Try to parse the timestamp - handle different formats
       let date: Date;
-      
+
       // Check if it's a Unix timestamp (number as string)
       if (/^\d+$/.test(timestamp)) {
         date = new Date(parseInt(timestamp));
@@ -248,7 +353,7 @@ export class CrowdEntriesComponent implements OnInit, OnDestroy {
       const now = new Date();
       const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
       const alertDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-      
+
       // Format time as "10:00 AM"
       const hours = date.getHours();
       const minutes = date.getMinutes();
@@ -256,19 +361,19 @@ export class CrowdEntriesComponent implements OnInit, OnDestroy {
       const displayHours = hours % 12 || 12;
       const displayMinutes = minutes.toString().padStart(2, '0');
       const timeString = `${displayHours}:${displayMinutes} ${ampm}`;
-      
+
       // Check if it's today
       if (alertDate.getTime() === today.getTime()) {
         return `Today, ${timeString}`;
       }
-      
+
       // Check if it's yesterday
       const yesterday = new Date(today);
       yesterday.setDate(yesterday.getDate() - 1);
       if (alertDate.getTime() === yesterday.getTime()) {
         return `Yesterday, ${timeString}`;
       }
-      
+
       // Otherwise show date
       return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ', ' + timeString;
     } catch (error) {
@@ -287,11 +392,11 @@ export class CrowdEntriesComponent implements OnInit, OnDestroy {
   showAlertInfo(alert: AlertEvent & { id: string; dismissed?: boolean }): void {
     // Mark alert as dismissed (seen/read)
     const alertList = this.alerts();
-    const updatedAlerts = alertList.map(a => 
+    const updatedAlerts = alertList.map(a =>
       a.id === alert.id ? { ...a, dismissed: true } : a
     );
     this.alerts.set(updatedAlerts);
-    
+
     // Log alert info (can add modal later if needed)
     console.log('Alert info:', alert);
   }
@@ -300,10 +405,18 @@ export class CrowdEntriesComponent implements OnInit, OnDestroy {
     this.isLoading.set(true);
     const siteId = this.authService.getStoredSiteId();
 
+    const date = this.selectedDate();
+    const start = startOfDay(date);
+    const end = endOfDay(date);
+    const fromUtc = start.getTime();
+    const toUtc = end.getTime();
+
     this.analyticsService.getEntryExitRecords({
       pageNumber: this.currentPage(),
       pageSize: this.pageSize(),
-      siteId: siteId || undefined
+      siteId: siteId || undefined,
+      fromUtc,
+      toUtc
     }).subscribe({
       next: (response) => {
         console.log('Entry Exit API Response:', response);
@@ -348,6 +461,32 @@ export class CrowdEntriesComponent implements OnInit, OnDestroy {
     if (this.currentPage() < this.totalPages()) {
       this.goToPage(this.currentPage() + 1);
     }
+  }
+
+  previousDay(): void {
+    const prev = addDays(this.selectedDate(), -1);
+    this.selectedDate.set(prev);
+    this.currentPage.set(1); // Reset to first page
+    this.loadEntries();
+  }
+
+  nextDay(): void {
+    const next = addDays(this.selectedDate(), 1);
+    // Optional: prevent going to future dates if desired, but user didn't explicitly restrict it.
+    // However, usually we don't look at future logs.
+    if (next <= new Date()) {
+      this.selectedDate.set(next);
+      this.currentPage.set(1);
+      this.loadEntries();
+    }
+  }
+
+  isToday(date: Date): boolean {
+    return isSameDay(date, new Date());
+  }
+
+  get formattedDate(): string {
+    return format(this.selectedDate(), 'MM/dd/yyyy');
   }
 
   formatTime(utcTimestamp: number | null | undefined, localTime?: string | null): string {
@@ -410,8 +549,8 @@ export class CrowdEntriesComponent implements OnInit, OnDestroy {
   }
 
   getGenderBadgeClass(gender: string): string {
-    return gender === 'male' 
-      ? 'bg-blue-100 text-blue-800' 
+    return gender === 'male'
+      ? 'bg-blue-100 text-blue-800'
       : 'bg-pink-100 text-pink-800';
   }
 
